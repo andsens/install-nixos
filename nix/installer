@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1091
+set -eo pipefail
+
+source "${RECORDS_SH:?}/records.sh"
+# shellcheck disable=SC2034
+LOGPROGRAM=install-nixos
+
+main() {
+  DOC="install-nixos - Install NixOS on the current machine
+Usage:
+  install-nixos [options]
+
+Options:
+  --abort-msg    Show an abort message for 5 secs before launching
+  --auto-reboot  Automatically reboot the machine after a successful install
+  --no-update    Don't update the installer before running
+  --no-sb-check  Don't check if the system is in Setup Mode
+  --no-mount     Don't mount the host system flake source if available
+  --repourl      Set the installation repository URL [default: \$REPOURL]
+"
+# docopt parser below, refresh this parser with `docopt.sh installer`
+# shellcheck disable=2016,2086,2329,1090,1091,2034
+docopt() { local v='2.0.3'; source "${DOCOPT_LIB_SH:?}/docopt-lib.sh" "$v" || {
+ret=$?;printf -- "exit %d\n" "$ret";exit "$ret";};set -e
+trimmed_doc=${DOC:0:502};usage=${DOC:53:32};digest=27e04;options=(' --abort-ms'\
+'g 0' ' --auto-reboot 0' ' --no-update 0' ' --no-sb-check 0' ' --no-mount 0' \
+' --repourl 0');node_0(){ switch __abort_msg 0;};node_1(){ switch \
+__auto_reboot 1;};node_2(){ switch __no_update 2;};node_3(){ switch \
+__no_sb_check 3;};node_4(){ switch __no_mount 4;};node_5(){ switch __repourl 5;}
+node_6(){ optional 0 1 2 3 4 5;};cat <<<' docopt_exit() { [[ -n $1 ]] && \
+printf "%s\n" "$1" >&2;printf "%s\n" "${DOC:53:32}" >&2;exit 1;}';local \
+varnames=(__abort_msg __auto_reboot __no_update __no_sb_check __no_mount \
+__repourl) varname;for varname in "${varnames[@]}"; do unset "var_$varname";done
+parse 6 "$@";local p=${DOCOPT_PREFIX:-''};for varname in "${varnames[@]}"; do
+unset "$p$varname";done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__au'\
+'to_reboot=${var___auto_reboot:-false};'$p'__no_update=${var___no_update:-fals'\
+'e};'$p'__no_sb_check=${var___no_sb_check:-false};'$p'__no_mount=${var___no_mo'\
+'unt:-false};'$p'__repourl=${var___repourl:-false};';local docopt_i=1;[[ \
+$BASH_VERSION =~ ^4.3 ]] && docopt_i=2;for ((;docopt_i>0;docopt_i--)); do for \
+varname in "${varnames[@]}"; do declare -p "$p$varname";done;done;}
+# docopt parser above, complete command for generating this parser is `docopt.sh --library='"${DOCOPT_LIB_SH:?}/docopt-lib.sh"' installer`
+  eval "$(docopt "$@")"
+
+  mkdir -p /tmp/install-nixos
+
+  local restart_args=(--no-update)
+  for e; do [[ $e = --no-update || $e = --abort-msg ]] || restart_args+=("$e"); done
+
+  # shellcheck disable=SC2064
+  trap "error \"Installation aborted. You can restart the installer with 'sudo install-nixos ${restart_args[*]}'.\"" EXIT
+
+  [[ $(id -u) = 0 ]] || fatal "Must run as root"
+
+  # shellcheck disable=SC2154
+  ! $__abort_msg || timeout_msg 5 "Launching the installer in %ds. Press <ENTER> to abort..."
+
+  # shellcheck disable=SC2154
+  if ! $__no_mount; then
+    (umount /tmp/install-nixos/flake-src 2>&1 || true) | pipe_debug
+    mkdir -p /tmp/install-nixos/flake-src
+    if mount -t 9p -o trans=virtio -o version=9p2000.L pwd /tmp/install-nixos/flake-src 2>&1 | pipe_debug; then
+      REPOURL=/tmp/install-nixos/flake-src
+    fi
+  elif [[ $__repourl != \$REPOURL ]]; then
+    REPOURL=$__repourl
+  elif [[ -z $REPOURL ]]; then
+    docopt_exit "No --repourl specified"
+  fi
+
+  # shellcheck disable=SC2154
+  if ! $__no_update; then
+    info "Self updating... building and running new installer"
+    exec nix run "$REPOURL#install-nixos" -- "${restart_args[@]}"
+  fi
+
+  # Instead of using traps, we clean up before running an install
+  # This way you can debug the state of the install if it crashes
+  info "Cleaning leftovers from previous install attempt"
+  ! findmnt /mnt/boot >/dev/null || umount /mnt/boot
+  if findmnt /mnt >/dev/null; then
+    rm -rf /mnt/etc/nixos
+    umount /mnt
+  fi
+  [[ ! -b /dev/mapper/nixos ]] || systemd-cryptsetup detach nixos
+
+  # Make sure we can enroll the secure boot keys
+  # shellcheck disable=SC2154
+  $__no_sb_check || sbctl status --json | jq -e .setup_mode >/dev/null 2>&1 || \
+    fatal "Your system is not in Setup Mode! Reset secure boot keys so they can be enrolled."
+
+  local disk hostname bootsize
+  disk=$(get_installdev)
+  hostname=$(get_hostname)
+  bootsize=$(get_bootsize)
+
+  get_secret /tmp/install-nixos/user_password "Enter a user login password"
+
+  # Setup a keyfile for the empty password. Used during first boot.
+  mkdir -p "$(dirname /tmp/install-nixos/empty.key)"
+  (umask 0066; touch /tmp/install-nixos/empty.key)
+
+  # Prompt, then prepare enrollment of a fallback FDE password
+  (umask 0066; touch /tmp/install-nixos/fallback.key)
+  get_secret /tmp/install-nixos/fallback.key "Enter a disk encryption fallback password"
+
+  clear
+
+  # Setup GPT table, then format disk with repart
+  info "Formatting disk"
+  parted "$disk" -- mklabel gpt
+  mkdir -p /tmp/install-nixos/repart.d
+  local file
+  for file in "${REPART_D:?}"/*; do
+    # shellcheck disable=SC2094
+    BOOTSIZE=$bootsize \
+      envsubst "\${BOOTSIZE}" <"$file" >/tmp/install-nixos/repart.d/"$(basename "$file")"
+  done
+  systemd-repart --dry-run=no \
+    --key-file /tmp/install-nixos/empty.key \
+    --definitions /tmp/install-nixos/repart.d "$disk"
+  # When systemd-repart returns the device nodes for the partitions might not exist yet.
+  # Give udev a second or two.
+  sleep 2
+
+  # Properly discover devpaths of the partitions, slapping on a "1" and "2" won't work for e.g. /dev/nvme0n1p2
+  local esp_devpath root_devpath
+  esp_devpath=$(lsblk -JO "$disk" | jq -r '.blockdevices[].children[] | select(.partn==1) | .path')
+  root_devpath=$(lsblk -JO "$disk" | jq -r '.blockdevices[].children[] | select(.partn==2) | .path')
+
+  # Attach the encrypted disk using the empty password
+  info "Attaching encrypted disk"
+  systemd-cryptsetup attach nixos "$root_devpath" /tmp/install-nixos/empty.key
+
+  info "Mounting root & boot"
+  mount /dev/mapper/nixos /mnt
+  (umask 0066; mkdir /mnt/boot)
+  mount "$esp_devpath" /mnt/boot
+
+  # Enroll a recovery key so the system can update e.g. the TPM2 key without having to prompt for the fallback password
+  info "Enrolling LUKS recovery key"
+  key=$(systemd-cryptenroll --unlock-key-file=/tmp/install-nixos/empty.key --recovery "$root_devpath")
+  # We don't just redirect the output from above
+  # The recovery key is output with a trailing newline that is not part of the key
+  mkdir -p /mnt/etc/cryptsetup-keys.d
+  (umask 0066; printf "%s" "$key" >/mnt/etc/cryptsetup-keys.d/nixos.key)
+
+  info "Enrolling LUKS fallback password"
+  key=$(cryptsetup luksAddKey --key-file=/tmp/install-nixos/empty.key --new-keyfile /tmp/install-nixos/fallback.key "$root_devpath")
+
+  info "Installing NixOS"
+  nixos-install --verbose --no-root-password --root /mnt --flake "$REPOURL#$hostname"
+
+  info "Copying user password to the system"
+  mkdir -p /mnt/etc/secrets.d
+  chmod 755 /mnt/etc/secrets.d
+  cp /tmp/install-nixos/user_password /mnt/etc/secrets.d/user.pwhash
+  chmod 600 /mnt/etc/secrets.d/user.pwhash
+
+  # Workaround for lanzaboote not installing the bootloader into the ESP
+  info "Installing bootloader"
+  mv /mnt/boot/EFI/BOOT/BOOTX64.EFI /mnt/boot/EFI/BOOT/BOOTX64.EFI.BAK
+  mv /mnt/boot/EFI/systemd/systemd-bootx64.efi /mnt/boot/EFI/systemd/systemd-bootx64.efi.bak
+  bootctl --esp-path /mnt/boot install
+  mv /mnt/boot/EFI/BOOT/BOOTX64.EFI.BAK /mnt/boot/EFI/BOOT/BOOTX64.EFI
+  mv /mnt/boot/EFI/systemd/systemd-bootx64.efi.bak /mnt/boot/EFI/systemd/systemd-bootx64.efi
+
+  info "Unmounting root & boot"
+  umount /mnt/boot
+  umount /mnt
+
+  trap "" EXIT
+  # shellcheck disable=SC2154
+  if $__auto_reboot; then
+    timeout_msg 5 "Rebooting in %ds. Press <ENTER> to abort..." || fatal "Reboot aborted"
+    reboot
+  else
+    info "Installation completed! Run \`reboot' to boot into your new system."
+  fi
+}
+
+get_installdev() {
+  local dev text dialog_args=() devices=()
+  while read -r -d $'\n' dev text; do
+    devices+=("$dev")
+    dialog_args+=("$dev" "$text")
+  done < <(lsblk -JnaO | jq -r '.blockdevices[] | select(
+      .group == "disk" and
+      .type != "loop" and
+      .fstype != "iso9660"
+    ) | "\(.path) \(.model // "Unknown model") (\(.size), \(.serial // "No serial"))"')
+  if [[ ${#devices[@]} -eq 0 ]]; then
+    printf "Did not find any disk installation candidates, run \`installer <DEVPATH>\`\n"  >&2
+    return 1
+  fi
+  dialog --stdout --menu "Select the disk where NixOS should be installed" 15 80 10 "${dialog_args[@]}"
+}
+
+get_hostname() {
+  local confignames configname dialog_args=()
+  confignames=$(nix flake show --json "$REPOURL" | jq -r '.nixosConfigurations | keys[]')
+  while IFS= read -r -d $'\n' configname; do
+    dialog_args+=("$configname" "$configname")
+  done <<<"$confignames"
+  dialog --stdout --menu "Select which host profile should be used for installing NixOS" 15 80 10 "${dialog_args[@]}"
+}
+
+get_bootsize() {
+  local bootsize prev_bootsize
+  [[ ! -e /tmp/install-nixos/bootsize ]] || prev_bootsize=$(cat /tmp/install-nixos/bootsize)
+  while true; do
+    bootsize=$(dialog --stdout --inputbox $'Specify the size of /boot\n(use M or G suffix)' 7 45 "$prev_bootsize")
+    if [[ ! $bootsize =~ ^[0-9]+[MG]$ ]]; then
+      dialog --stdout --msgbox "Invalid size specified!" 7 45
+    else
+      break
+    fi
+  done
+  printf "%s" "$bootsize" >/tmp/install-nixos/bootsize
+}
+
+get_secret() {
+  local save_path=$1 message=$2 password prev_pass
+  [[ ! -e $save_path ]] || prev_pass=$(cat "$save_path")
+  while true; do
+    password=$(dialog --stdout --insecure --passwordbox "$message" 7 45 "$prev_pass")
+    if [[ -n $prev_pass && $password = "$prev_pass" ]]; then
+      break
+    elif [[ -z $password ]]; then
+      dialog --stdout --msgbox "Password must not be empty" 7 45
+    elif [[ $password != "$(dialog --stdout --insecure --passwordbox "Retype to confirm the password" 7 45 "$prev_pass")" ]]; then
+      dialog --stdout --msgbox "Passwords do not match!" 7 45
+    else
+      break
+    fi
+  done
+  printf "%s" "$password" >"$save_path"
+}
+
+timeout_msg() {
+  local timeout=$1 msg_tpl=$2 rendered_msg ret
+  until (( timeout == 0 )); do
+    # shellcheck disable=SC2059
+    rendered_msg=$(printf "\r$msg_tpl" "$timeout")
+    ret=0
+    read -r -p "$rendered_msg" -t 1 || ret=$?
+    [[ $ret = 142 ]] || return 1
+    : $((timeout--))
+  done
+  printf "\n"
+  return 0
+}
+
+main "$@"
