@@ -187,11 +187,11 @@ get_installdev() {
   while read -r -d $'\n' dev text; do
     devices+=("$dev")
     dialog_args+=("$dev" "$text")
-  done < <(lsblk -JnaO | jq -r '.blockdevices[] | select(
+  done < <(lsblk -JaO | jq -r '.blockdevices[] | select(
       .group == "disk" and
       .type != "loop" and
       .fstype != "iso9660"
-    ) | "\(.path) \(.model // "Unknown model") (\(.size), \(.serial // "No serial"))"')
+    ) | "\(.path) \([(.children // [])[] | .label | select(. != "ESP" and . != null)] | first // "unlabeled"), \(.serial // "No serial") (\(.model // "Unknown model"), \(.size))"')
   if [[ ${#devices[@]} -eq 0 ]]; then
     printf "Did not find any disk installation candidates, run \`installer <DEVPATH>\`\n"  >&2
     return 1
