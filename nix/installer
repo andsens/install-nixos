@@ -89,12 +89,15 @@ varname in "${varnames[@]}"; do declare -p "$p$varname";done;done;}
   $__no_sb_check || sbctl status --json | jq -e .setup_mode >/dev/null 2>&1 || \
     fatal "Your system is not in Setup Mode! Reset secure boot keys so they can be enrolled."
 
-  local disk hostname bootsize
+  local disk hostname bootsize username_pwdest pwdest
   disk=$(get_installdev)
   hostname=$(get_hostname)
   bootsize=$(get_bootsize)
-
-  get_secret /tmp/install-nixos/user_password "Enter a user login password"
+  if username_pwdest=$(nix eval --json "$REPOURL#nixosConfigurations.\"$hostname\".config.users.users" | \
+    jq -re '[.[] | select(.hashedPasswordFile != null and .enable)] | first | (.name, .hashedPasswordFile)'); then
+    pwdest=${username_pwdest#*\n}
+    get_secret /tmp/install-nixos/user_password "Enter a password for \"${username_pwdest%\n*}\""
+  fi
 
   # Setup a keyfile for the empty password. Used during first boot.
   mkdir -p "$(dirname /tmp/install-nixos/empty.key)"
@@ -154,7 +157,7 @@ varname in "${varnames[@]}"; do declare -p "$p$varname";done;done;}
   info "Copying user password to the system"
   mkdir -p /mnt/etc/secrets.d
   chmod 755 /mnt/etc/secrets.d
-  cp /tmp/install-nixos/user_password /mnt/etc/secrets.d/user.pwhash
+  cp /tmp/install-nixos/user_password "/mnt/${pwdest#'/'}"
   chmod 600 /mnt/etc/secrets.d/user.pwhash
 
   # Workaround for lanzaboote not installing the bootloader into the ESP
