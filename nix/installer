@@ -222,6 +222,7 @@ get_bootsize() {
     fi
   done
   printf "%s" "$bootsize" >/tmp/install-nixos/bootsize
+  printf "%s" "$bootsize"
 }
 
 get_secret() {
