@@ -5,6 +5,9 @@
   lib,
   ...
 }:
+let
+  cfg = config.install-nixos;
+in
 {
   options.install-nixos = {
     repo.url = lib.mkOption {
@@ -24,6 +27,12 @@
     };
     package = lib.mkPackageOption self.packages.${pkgs.stdenv.hostPlatform.system} "install-nixos" {
       extraDescription = "The `install-nixos` package to use";
+    };
+    self-update-url = lib.mkOption {
+      description = "URL to the installer package (\${config.install-nixos.package}) so it can run the newest version, null to disable";
+      type = lib.types.nullOr lib.types.str;
+      default = "${cfg.repo.url}#nixosConfigurations.${config.networking.hostName}.config.install-nixos.package";
+      defaultText = lib.literalExpression "\${repo.url}#nixosConfigurations.$HOSTNAME.config.install-nixos.package";
     };
     iso-image = lib.mkOption {
       description = ''The installer ISO derivation'';

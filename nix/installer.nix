@@ -49,7 +49,7 @@ stdenv.mkDerivation rec {
     mkdir -p "$out/bin"
     cat >"$out/bin/${name}" <<EOF
     #!${lib.getExe bash}
-    export PATH="${
+    PATH="${
       lib.makeBinPath [
         bash
         jq
@@ -76,7 +76,7 @@ stdenv.mkDerivation rec {
     }" \\
     RECORDS_SH=${records_sh} \\
     DOCOPT_LIB_SH=${docopt_sh} \\
-    REPART_D=${./repart.d}
+    REPART_D=${./repart.d} \\
     exec ${./installer} "\$@"
     EOF
     chmod +x "$out/bin/${name}"

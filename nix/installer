@@ -14,7 +14,7 @@ Usage:
 Options:
   --abort-msg    Show an abort message for 5 secs before launching
   --auto-reboot  Automatically reboot the machine after a successful install
-  --no-update    Don't update the installer before running
+  --update=URL   \`nix run\` the given URL instead of installing
   --no-sb-check  Don't check if the system is in Setup Mode
   --no-mount     Don't mount the host system flake source if available
   --repourl      Set the installation repository URL [default: \$REPOURL]
@@ -23,32 +23,29 @@ Options:
 # shellcheck disable=2016,2086,2329,1090,1091,2034
 docopt() { local v='2.0.3'; source "${DOCOPT_LIB_SH:?}/docopt-lib.sh" "$v" || {
 ret=$?;printf -- "exit %d\n" "$ret";exit "$ret";};set -e
-trimmed_doc=${DOC:0:502};usage=${DOC:53:32};digest=27e04;options=(' --abort-ms'\
-'g 0' ' --auto-reboot 0' ' --no-update 0' ' --no-sb-check 0' ' --no-mount 0' \
-' --repourl 0');node_0(){ switch __abort_msg 0;};node_1(){ switch \
-__auto_reboot 1;};node_2(){ switch __no_update 2;};node_3(){ switch \
-__no_sb_check 3;};node_4(){ switch __no_mount 4;};node_5(){ switch __repourl 5;}
-node_6(){ optional 0 1 2 3 4 5;};cat <<<' docopt_exit() { [[ -n $1 ]] && \
-printf "%s\n" "$1" >&2;printf "%s\n" "${DOC:53:32}" >&2;exit 1;}';local \
-varnames=(__abort_msg __auto_reboot __no_update __no_sb_check __no_mount \
-__repourl) varname;for varname in "${varnames[@]}"; do unset "var_$varname";done
-parse 6 "$@";local p=${DOCOPT_PREFIX:-''};for varname in "${varnames[@]}"; do
-unset "$p$varname";done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__au'\
-'to_reboot=${var___auto_reboot:-false};'$p'__no_update=${var___no_update:-fals'\
-'e};'$p'__no_sb_check=${var___no_sb_check:-false};'$p'__no_mount=${var___no_mo'\
-'unt:-false};'$p'__repourl=${var___repourl:-false};';local docopt_i=1;[[ \
-$BASH_VERSION =~ ^4.3 ]] && docopt_i=2;for ((;docopt_i>0;docopt_i--)); do for \
-varname in "${varnames[@]}"; do declare -p "$p$varname";done;done;}
+trimmed_doc=${DOC:0:506};usage=${DOC:53:32};digest=5d3d9;options=(' --abort-ms'\
+'g 0' ' --auto-reboot 0' ' --update 1' ' --no-sb-check 0' ' --no-mount 0' ' --'\
+'repourl 0');node_0(){ switch __abort_msg 0;};node_1(){ switch __auto_reboot 1;}
+node_2(){ value __update 2;};node_3(){ switch __no_sb_check 3;};node_4(){
+switch __no_mount 4;};node_5(){ switch __repourl 5;};node_6(){ optional 0 1 2 \
+3 4 5;};cat <<<' docopt_exit() { [[ -n $1 ]] && printf "%s\n" "$1" >&2;printf \
+"%s\n" "${DOC:53:32}" >&2;exit 1;}';local varnames=(__abort_msg __auto_reboot \
+__update __no_sb_check __no_mount __repourl) varname;for varname in \
+"${varnames[@]}"; do unset "var_$varname";done;parse 6 "$@";local \
+p=${DOCOPT_PREFIX:-''};for varname in "${varnames[@]}"; do unset "$p$varname"
+done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
+'uto_reboot:-false};'$p'__update=${var___update:-};'$p'__no_sb_check=${var___n'\
+'o_sb_check:-false};'$p'__no_mount=${var___no_mount:-false};'$p'__repourl=${va'\
+'r___repourl:-false};';local docopt_i=1;[[ $BASH_VERSION =~ ^4.3 ]] && \
+docopt_i=2;for ((;docopt_i>0;docopt_i--)); do for varname in "${varnames[@]}"; \
+do declare -p "$p$varname";done;done;}
 # docopt parser above, complete command for generating this parser is `docopt.sh --library='"${DOCOPT_LIB_SH:?}/docopt-lib.sh"' installer`
   eval "$(docopt "$@")"
 
   mkdir -p /tmp/install-nixos
 
-  local restart_args=(--no-update)
-  for e; do [[ $e = --no-update || $e = --abort-msg ]] || restart_args+=("$e"); done
-
   # shellcheck disable=SC2064
-  trap "error \"Installation aborted. You can restart the installer with 'sudo install-nixos ${restart_args[*]}'.\"" EXIT
+  trap "error \"Installation aborted. You can restart the installer with 'sudo install-nixos'.\"" EXIT
 
   [[ $(id -u) = 0 ]] || fatal "Must run as root"
 
@@ -69,9 +66,12 @@ varname in "${varnames[@]}"; do declare -p "$p$varname";done;done;}
   fi
 
   # shellcheck disable=SC2154
-  if ! $__no_update; then
+  if [[ -n $__update ]]; then
     info "Self updating... building and running new installer"
-    exec nix run "$REPOURL#install-nixos" -- "${restart_args[@]}"
+    local rerun_args=(--no-update)
+    for e; do [[ $e = --no-update || $e = --abort-msg ]] || rerun_args+=("$e"); done
+    trap "" EXIT
+    exec nix run "$__update" -- "${rerun_args[@]}"
   fi
 
   # Instead of using traps, we clean up before running an install

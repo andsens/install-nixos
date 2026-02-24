@@ -18,11 +18,7 @@
         systems = import systems;
         flake.nixosModules = {
           default = config.flake.nixosModules.install-nixos;
-          install-nixos =
-            { pkgs, lib, ... }@args:
-            {
-              imports = [ ((import ./nix mkFlakeArgs) args) ];
-            };
+          install-nixos = args: { imports = [ ((import ./nix mkFlakeArgs) args) ]; };
         };
         perSystem =
           { pkgs, ... }:

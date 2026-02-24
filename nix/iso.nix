@@ -57,15 +57,22 @@ in
   };
   environment.interactiveShellInit =
     if (cfg.repo.url != null) then
+      let
+        args = [
+          "--abort-msg"
+          "--auto-reboot"
+        ]
+        ++ lib.optional (cfg.self-update-url != null) "--update=${cfg.self-update-url}";
+      in
       ''
         export REPOURL=${cfg.repo.url}
         if [[ $USER = nixos && ! -e .installer-launched ]]; then
           touch .installer-launched
-          sudo install-nixos --abort-msg --auto-reboot
+          sudo install-nixos ${lib.escapeShellArgs args}
         fi
       ''
     else
       ''
-        printf 'You begin installing NixOS by running `sudo install-nixos --repourl <FLAKE URL>`\n' >&2
+        printf 'You can install NixOS by running `sudo install-nixos --repourl <FLAKE URL>`\n' >&2
       '';
 }
