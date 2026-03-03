@@ -169,10 +169,10 @@ done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
 
   if [[ -n $password ]]; then
     info "Copying hashed user password to the system"
-    mkdir -p /mnt/etc/secrets.d
-    chmod 755 /mnt/etc/secrets.d
-    printf "%s" "$password" | mkpasswd >"/mnt/${pwdest#'/'}"
-    chmod 600 /mnt/etc/secrets.d/user.pwhash
+    mkdir -p "$(dirname "/mnt$pwdest")"
+    chmod 755 "$(dirname "/mnt$pwdest")"
+    printf "%s" "$password" | mkpasswd --stdin >"/mnt$pwdest"
+    chmod 600 "/mnt$pwdest"
   fi
 
   # Workaround for lanzaboote not installing the bootloader into the ESP
