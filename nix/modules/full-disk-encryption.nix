@@ -7,18 +7,6 @@
 }:
 let
   cfg = config.sbfde.full-disk-encryption;
-  cryptenroll-tpm2 = pkgs.writeShellScriptBin "cryptenroll-tpm2" ''
-    main() {
-      local args=(
-        --tpm2-device=auto --wipe-slot=tpm2
-        --tpm2-pcrs=${cfg.tpm2PCRs}
-        ${config.fileSystems."/".encrypted.blkDev}
-      )
-      [[ ! -e "${cfg.recoveryKeyPath}" ]] || args+=(--unlock-key-file "${cfg.recoveryKeyPath}")
-      exec ${lib.getExe' pkgs.systemd "systemd-cryptenroll"} "''${args[@]}"
-    }
-    main "$@"
-  '';
 in
 {
   options.sbfde.full-disk-encryption = {
@@ -54,7 +42,6 @@ in
       "tpm2-measure-pcr=yes" # sooooper important, otherwise the key is accessible after booting
       "tpm2-device=auto"
     ];
-    environment.systemPackages = [ cryptenroll-tpm2 ];
     systemd.services = {
       cryptenroll-tpm2 = lib.mkIf config.boot.lanzaboote.enable {
         restartIfChanged = true;
@@ -63,10 +50,19 @@ in
           ConditionSecurity = [ "uefi-secureboot" ];
           ConditionPathExists = cfg.recoveryKeyPath;
         };
-        serviceConfig = {
-          Type = "oneshot";
-          ExecStart = lib.getExe cryptenroll-tpm2;
-        };
+        serviceConfig.Type = "oneshot";
+        script = ''
+          main() {
+            local args=(
+              --tpm2-device=auto --wipe-slot=tpm2
+              --tpm2-pcrs=${cfg.tpm2PCRs}
+              ${config.fileSystems."/".encrypted.blkDev}
+            )
+            [[ ! -e "${cfg.recoveryKeyPath}" ]] || args+=(--unlock-key-file "${cfg.recoveryKeyPath}")
+            exec ${lib.getExe' pkgs.systemd "systemd-cryptenroll"} "''${args[@]}"
+          }
+          main "$@"
+        '';
         wantedBy = [ "default.target" ];
       };
       cryptenroll-wipe-empty = {
