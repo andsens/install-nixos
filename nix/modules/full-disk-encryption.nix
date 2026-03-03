@@ -43,7 +43,7 @@ in
     ];
     fileSystems."/" = {
       fsType = lib.mkDefault "ext4";
-      device = "/dev/mapper/${config.fileSystem."/".encrypted.label}";
+      device = "/dev/mapper/${config.fileSystems."/".encrypted.label}";
       encrypted = {
         enable = true;
         blkDev = lib.mkDefault "/dev/disk/by-label/nixos-encrypted";
