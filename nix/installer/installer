@@ -106,8 +106,8 @@ done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
   recoverykeypath=$(get_config "$hostname" 'sbfde.full-disk-encryption.recoveryKeyPath')
   if username_pwdest=$(get_config "$hostname" users.users | \
     jq -re '[.[] | select(.hashedPasswordFile != null and .enable)] | first | (.name, .hashedPasswordFile)'); then
-    pwdest=${username_pwdest#*\n}
-    password=$(get_secret $INSTALLTMP/user_password "Enter a password for \"${username_pwdest%\n*}\"")
+    pwdest=${username_pwdest#*$'\n'}
+    password=$(get_secret $INSTALLTMP/user_password "Enter a password for \"${username_pwdest%$'\n'*}\"")
   fi
 
   # Setup a keyfile for the empty password. Used during first boot.
