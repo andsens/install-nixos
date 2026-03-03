@@ -130,7 +130,7 @@ done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
     BOOTSIZE=$bootsize \
     ROOTLABEL=$rootlabel \
     ROOTFORMAT=$rootformat \
-      envsubst "\${BOOTSIZE}" <"$file" >$INSTALLTMP/repart.d/"$(basename "$file")"
+      envsubst "\${BOOTSIZE} \${ROOTLABEL} \${ROOTFORMAT}" <"$file" >$INSTALLTMP/repart.d/"$(basename "$file")"
   done
   systemd-repart --dry-run=no \
     --key-file $INSTALLTMP/empty.key \
