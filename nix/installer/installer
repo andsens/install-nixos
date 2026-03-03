@@ -84,6 +84,7 @@ do declare -p "$p$varname";done;done;}
   fi
   [[ ! -b /dev/mapper/nixos ]] || systemd-cryptsetup detach nixos
 
+# boot.lanzaboote.enable
   # Make sure we can enroll the secure boot keys
   # shellcheck disable=SC2154
   $__no_sb_check || sbctl status --json | jq -e .setup_mode >/dev/null 2>&1 || \
@@ -93,7 +94,12 @@ do declare -p "$p$varname";done;done;}
   disk=$(get_installdev)
   hostname=$(get_hostname)
   bootsize=$(get_bootsize)
-  if username_pwdest=$(nix eval --json "$REPOURL#nixosConfigurations.\"$hostname\".config.users.users" | \
+  rootlabel=$(get_config "$hostname" 'fileSystems."/".encrypted.blkDev')
+  [[ $rootlabel = /dev/disk/by-label/* ]] || fatal "The configuration for \"%s\" does not have full disk encryption enabled, unable to continue" "$hostname"
+  rootlabel=${rootlabel#"/dev/disk/by-label/"}
+  rootformat=$(get_config "$hostname" 'fileSystems."/".fsType')
+  recoverykeypath=$(get_config "$hostname" 'install-nixos.fde.recoveryKeyPath')
+  if username_pwdest=$(get_config "$hostname" users.users | \
     jq -re '[.[] | select(.hashedPasswordFile != null and .enable)] | first | (.name, .hashedPasswordFile)'); then
     pwdest=${username_pwdest#*\n}
     password=$(get_secret /tmp/install-nixos/user_password "Enter a password for \"${username_pwdest%\n*}\"")
@@ -117,6 +123,8 @@ do declare -p "$p$varname";done;done;}
   for file in "${REPART_D:?}"/*; do
     # shellcheck disable=SC2094
     BOOTSIZE=$bootsize \
+    ROOTLABEL=$rootlabel \
+    ROOTFORMAT=$rootformat \
       envsubst "\${BOOTSIZE}" <"$file" >/tmp/install-nixos/repart.d/"$(basename "$file")"
   done
   systemd-repart --dry-run=no \
@@ -145,8 +153,8 @@ do declare -p "$p$varname";done;done;}
   key=$(systemd-cryptenroll --unlock-key-file=/tmp/install-nixos/empty.key --recovery "$root_devpath")
   # We don't just redirect the output from above
   # The recovery key is output with a trailing newline that is not part of the key
-  mkdir -p /mnt/etc/cryptsetup-keys.d
-  (umask 0066; printf "%s" "$key" >/mnt/etc/cryptsetup-keys.d/nixos.key)
+  mkdir -p "/mnt$(dirname "$recoverykeypath")"
+  (umask 0066; printf "%s" "$key" >/mnt"$recoverykeypath")
 
   info "Enrolling LUKS fallback password"
   key=$(cryptsetup luksAddKey --key-file=/tmp/install-nixos/empty.key --new-keyfile /tmp/install-nixos/fallback.key "$root_devpath")
@@ -211,7 +219,7 @@ get_hostname() {
 }
 
 get_bootsize() {
-  local bootsize prev_bootsize
+  local bootsize prev_bootsize=1G
   [[ ! -e /tmp/install-nixos/bootsize ]] || prev_bootsize=$(cat /tmp/install-nixos/bootsize)
   while true; do
     bootsize=$(dialog --stdout --inputbox $'Specify the size of /boot\n(use M or G suffix)' 7 45 "$prev_bootsize")
@@ -242,6 +250,11 @@ get_secret() {
   done
   printf "%s" "$password" >"$save_path"
   printf "%s" "$password"
+}
+
+get_config() {
+  local hostname=$1 configpath=$2
+  nix eval --json "$REPOURL#nixosConfigurations.\"$hostname\".config.$configpath" | jq -r .
 }
 
 timeout_msg() {

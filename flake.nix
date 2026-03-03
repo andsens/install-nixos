@@ -1,9 +1,13 @@
 {
-  description = "home-server";
+  description = "NixOS SecureBoot FDE";
   inputs = {
     flake-parts.url = "github:hercules-ci/flake-parts";
     systems.url = "github:nix-systems/default-linux";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    lanzaboote = {
+      url = "github:nix-community/lanzaboote/v1.0.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
   outputs =
     {
@@ -24,13 +28,14 @@
       {
         systems = import systems;
         flake.nixosModules = {
-          default = config.flake.nixosModules.install-nixos;
-          install-nixos = args: { imports = [ (importApply ./nix mkFlakeArgs) ]; };
+          installer = args: { imports = [ (importApply ./nix/modules/installer.nix mkFlakeArgs) ]; };
+          full-disk-encryption = args: { imports = [ ./nix/modules/full-disk-encryption.nix ]; };
+          secureboot = args: { imports = [ ./nix/modules/secureboot.nix ]; };
         };
         perSystem =
           { pkgs, ... }:
           {
-            packages.install-nixos = pkgs.callPackage ./nix/installer.nix { };
+            packages.installer = pkgs.callPackage ./nix/installer { };
           };
       }
     );

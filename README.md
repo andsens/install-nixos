@@ -1,20 +1,22 @@
-# install-nixos
+# nixos-sbfde
 
-A flake module for building an installation ISO for your NixOS setup.  
-It sets up full disk encryption with automatic unlocking using secure boot.  
+Flake modules for configuring and installing NixOS with SecureBoot-backed
+full disk encryption.  
+The installer sets up full disk encryption with automatic unlocking using
+secure boot.  
 There is a menu for selecting the disk, host configuration, user password,
 disk encryption fallback password, and the boot partition size.
 
 # Setup
 
-Add `install-nixos` to your `flake.nix`:
+Add `nixos-sbfde` to your `flake.nix`:
 
 ```nix
 {
   inputs = {
     ...
-    install-nixos = {
-      url = "github:andsens/install-nixos";
+    nixos-sbfde = {
+      url = "github:andsens/nixos-sbfde";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     ...
@@ -23,18 +25,43 @@ Add `install-nixos` to your `flake.nix`:
 }
 ```
 
-Create a `configuration.nix` representing your installation environment (using github.com as an example):
+## Host configuration
+
+Import the SecureBoot and full disk encryption modules in your `configuration.nix`
+and enable them:
 
 ```nix
 { inputs, ... }:
 {
-  imports = [ inputs.install-nixos.nixosModules.install-nixos ];
+  imports = [
+    inputs.nixos-sbfde.nixosModules.secureboot
+    inputs.nixos-sbfde.nixosModules.full-disk-encryption
+ ];
+  config = {
+    sbfde.secureboot.enable = true;
+    sbfde.full-disk-encryption.enable = true;
+  };
+```
+
+## Installer
+
+Create a `configuration.nix` for your installation USB stick:
+
+```nix
+{ inputs, modulesPath, ... }:
+{
+  imports = [
+    inputs.nixos-sbfde.nixosModules.installer
+    "${modulesPath}/installer/cd-dvd/installation-cd-minimal.nix"
+    "${modulesPath}/installer/cd-dvd/iso-image.nix"
+  ];
   config = {
     system.stateVersion = "25.11";
     time.timeZone = "Europe/Copenhagen";
     nixpkgs.hostPlatform = "x86_64-linux";
 
-    install-nixos = {
+    sbfde.installer = {
+      enable = true;
       # Can be omitted
       repo.url = "git+ssh://git@github.com/username/reponame";
       # If your repo is public you won't need this option
@@ -80,5 +107,5 @@ Add it to your `flake.nix`:
 To build an ISO that you can put on a USB stick, run:
 
 ```
-nix build '.#nixosConfigurations.installer.config.install-nixos.iso-image'
+nix build '.#nixosConfigurations.installer.config.sbfde.installer.iso-image'
 ```
