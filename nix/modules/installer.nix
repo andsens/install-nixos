@@ -85,6 +85,11 @@ in
         argument = cfg.repo.deploy-key;
       };
     };
+    security.sudo.extraConfig = ''
+      # Keep install-nixos env vars for root and %wheel.
+      Defaults:root,%wheel env_keep+=REPOURL
+      Defaults:root,%wheel env_keep+=UPDATEPATH
+    '';
     environment.interactiveShellInit =
       if (cfg.repo.url != null) then
         let
