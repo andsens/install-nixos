@@ -5,6 +5,7 @@ set -eo pipefail
 source "${RECORDS_SH:?}/records.sh"
 # shellcheck disable=SC2034
 LOGPROGRAM=install-nixos
+INSTALLTMP=/tmp/install-nixos
 
 main() {
   DOC="install-nixos - Install NixOS on the current machine
@@ -42,7 +43,7 @@ do declare -p "$p$varname";done;done;}
 # docopt parser above, complete command for generating this parser is `docopt.sh --library='"${DOCOPT_LIB_SH:?}/docopt-lib.sh"' installer`
   eval "$(docopt "$@")"
 
-  mkdir -p /tmp/install-nixos
+  mkdir -p $INSTALLTMP
 
   # shellcheck disable=SC2064
   trap "error \"Installation aborted. You can restart the installer with 'sudo install-nixos --update'.\"" EXIT
@@ -54,10 +55,10 @@ do declare -p "$p$varname";done;done;}
 
   # shellcheck disable=SC2154
   if ! $__no_mount; then
-    (umount /tmp/install-nixos/flake-src 2>&1 || true) | pipe_debug
-    mkdir -p /tmp/install-nixos/flake-src
-    if mount -t 9p -o trans=virtio -o version=9p2000.L pwd /tmp/install-nixos/flake-src 2>&1 | pipe_debug; then
-      REPOURL=/tmp/install-nixos/flake-src
+    (umount $INSTALLTMP/flake-src 2>&1 || true) | pipe_debug
+    mkdir -p $INSTALLTMP/flake-src
+    if mount -t 9p -o trans=virtio -o version=9p2000.L pwd $INSTALLTMP/flake-src 2>&1 | pipe_debug; then
+      REPOURL=$INSTALLTMP/flake-src
     fi
   elif [[ $__repourl != \$REPOURL ]]; then
     REPOURL=$__repourl
@@ -105,34 +106,34 @@ do declare -p "$p$varname";done;done;}
   if username_pwdest=$(get_config "$hostname" users.users | \
     jq -re '[.[] | select(.hashedPasswordFile != null and .enable)] | first | (.name, .hashedPasswordFile)'); then
     pwdest=${username_pwdest#*\n}
-    password=$(get_secret /tmp/install-nixos/user_password "Enter a password for \"${username_pwdest%\n*}\"")
+    password=$(get_secret $INSTALLTMP/user_password "Enter a password for \"${username_pwdest%\n*}\"")
   fi
 
   # Setup a keyfile for the empty password. Used during first boot.
-  mkdir -p "$(dirname /tmp/install-nixos/empty.key)"
-  (umask 0066; touch /tmp/install-nixos/empty.key)
+  mkdir -p "$(dirname $INSTALLTMP/empty.key)"
+  (umask 0066; touch $INSTALLTMP/empty.key)
 
   # Prompt, then prepare enrollment of a fallback FDE password
-  (umask 0066; touch /tmp/install-nixos/fallback.key)
-  get_secret /tmp/install-nixos/fallback.key "Enter a disk encryption fallback password"
+  (umask 0066; touch $INSTALLTMP/fallback.key)
+  get_secret $INSTALLTMP/fallback.key "Enter a disk encryption fallback password"
 
   clear
 
   # Setup GPT table, then format disk with repart
   info "Formatting disk"
   parted "$disk" -- mklabel gpt
-  mkdir -p /tmp/install-nixos/repart.d
+  mkdir -p $INSTALLTMP/repart.d
   local file
   for file in "${REPART_D:?}"/*; do
     # shellcheck disable=SC2094
     BOOTSIZE=$bootsize \
     ROOTLABEL=$rootlabel \
     ROOTFORMAT=$rootformat \
-      envsubst "\${BOOTSIZE}" <"$file" >/tmp/install-nixos/repart.d/"$(basename "$file")"
+      envsubst "\${BOOTSIZE}" <"$file" >$INSTALLTMP/repart.d/"$(basename "$file")"
   done
   systemd-repart --dry-run=no \
-    --key-file /tmp/install-nixos/empty.key \
-    --definitions /tmp/install-nixos/repart.d "$disk"
+    --key-file $INSTALLTMP/empty.key \
+    --definitions $INSTALLTMP/repart.d "$disk"
   # When systemd-repart returns the device nodes for the partitions might not exist yet.
   # Give udev a second or two.
   sleep 2
@@ -144,7 +145,7 @@ do declare -p "$p$varname";done;done;}
 
   # Attach the encrypted disk using the empty password
   info "Attaching encrypted disk"
-  systemd-cryptsetup attach nixos "$root_devpath" /tmp/install-nixos/empty.key
+  systemd-cryptsetup attach nixos "$root_devpath" $INSTALLTMP/empty.key
 
   info "Mounting root & boot"
   mount /dev/mapper/nixos /mnt
@@ -153,14 +154,14 @@ do declare -p "$p$varname";done;done;}
 
   # Enroll a recovery key so the system can update e.g. the TPM2 key without having to prompt for the fallback password
   info "Enrolling LUKS recovery key"
-  key=$(systemd-cryptenroll --unlock-key-file=/tmp/install-nixos/empty.key --recovery "$root_devpath")
+  key=$(systemd-cryptenroll --unlock-key-file=$INSTALLTMP/empty.key --recovery "$root_devpath")
   # We don't just redirect the output from above
   # The recovery key is output with a trailing newline that is not part of the key
   mkdir -p "/mnt$(dirname "$recoverykeypath")"
   (umask 0066; printf "%s" "$key" >/mnt"$recoverykeypath")
 
   info "Enrolling LUKS fallback password"
-  key=$(cryptsetup luksAddKey --key-file=/tmp/install-nixos/empty.key --new-keyfile /tmp/install-nixos/fallback.key "$root_devpath")
+  key=$(cryptsetup luksAddKey --key-file=$INSTALLTMP/empty.key --new-keyfile $INSTALLTMP/fallback.key "$root_devpath")
 
   info "Installing NixOS"
   nixos-install --verbose --no-root-password --root /mnt --flake "$REPOURL#$hostname"
@@ -223,7 +224,7 @@ get_hostname() {
 
 get_bootsize() {
   local bootsize prev_bootsize=1G
-  [[ ! -e /tmp/install-nixos/bootsize ]] || prev_bootsize=$(cat /tmp/install-nixos/bootsize)
+  [[ ! -e $INSTALLTMP/bootsize ]] || prev_bootsize=$(cat $INSTALLTMP/bootsize)
   while true; do
     bootsize=$(dialog --stdout --inputbox $'Specify the size of /boot\n(use M or G suffix)' 7 45 "$prev_bootsize")
     if [[ ! $bootsize =~ ^[0-9]+[MG]$ ]]; then
@@ -232,7 +233,7 @@ get_bootsize() {
       break
     fi
   done
-  printf "%s" "$bootsize" >/tmp/install-nixos/bootsize
+  printf "%s" "$bootsize" >$INSTALLTMP/bootsize
   printf "%s" "$bootsize"
 }
 
