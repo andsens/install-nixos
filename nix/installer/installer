@@ -73,6 +73,7 @@ do declare -p "$p$varname";done;done;}
     unset UPDATEPATH
     for e; do [[ $e = --update || $e = --abort-msg ]] || rerun_args+=("$e"); done
     trap "" EXIT
+    info "If this fails, you can restart the installer without updating by running 'sudo install-nixos'"
     exec nix run "$updatepath" -- "${rerun_args[@]}"
   fi
 

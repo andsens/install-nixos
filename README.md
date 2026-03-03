@@ -59,7 +59,7 @@ Create a `configuration.nix` for your installation USB stick:
     system.stateVersion = "25.11";
     time.timeZone = "Europe/Copenhagen";
     nixpkgs.hostPlatform = "x86_64-linux";
-
+    networking.hostName = "installer";
     sbfde.installer = {
       enable = true;
       # Can be omitted
@@ -94,7 +94,7 @@ Add it to your `flake.nix`:
     ...
     nixosConfigurations.installer = nixpkgs.lib.nixosSystem {
       specialArgs = { inherit inputs lib; };
-      modules = [./hosts/installer/configuration.nix];
+      modules = [ ./hosts/installer/configuration.nix ];
     };
     ...
   };
