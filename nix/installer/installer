@@ -139,9 +139,11 @@ done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
       envsubst "\${BOOTSIZE} \${ROOTLABEL} \${ROOTFORMAT}" <"$file" >$INSTALLTMP/repart.d/"$(basename "$file")"
   done
 
+  mkdir -p "$(dirname $INSTALLTMP/empty.key)"
+  (umask 0066; touch $INSTALLTMP/empty.key)
   SYSTEMD_REPART_MKFS_OPTIONS_EXT4="-E nodiscard" \
     systemd-repart --dry-run=no \
-      --key-file $INSTALLTMP/fallback.key \
+      --key-file $INSTALLTMP/empty.key \
       --definitions $INSTALLTMP/repart.d "$disk"
 
   # When systemd-repart returns the device nodes for the partitions might not exist yet.
@@ -154,8 +156,6 @@ done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
   root_devpath=$(lsblk -JO "$disk" | jq -r '.blockdevices[].children[] | select(.partn==2) | .path')
 
   # Attach the encrypted disk using the empty password
-  mkdir -p "$(dirname $INSTALLTMP/empty.key)"
-  (umask 0066; touch $INSTALLTMP/empty.key)
   info "Attaching encrypted disk"
   if $allowdiscards; then
     cryptsetup open --allow-discards --key-file=$INSTALLTMP/empty.key "$root_devpath" nixos
