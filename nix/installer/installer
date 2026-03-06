@@ -59,6 +59,7 @@ docopt_i=1;[[ $BASH_VERSION =~ ^4.3 ]] && docopt_i=2;for \
   # shellcheck disable=SC2154
   if ! $__no_mount && mount -t 9p -o trans=virtio -o version=9p2000.L pwd $INSTALLTMP/flake-src 2>&1 | pipe_debug; then
     info "Mounted host system flake source, disable this with '--no-mount'"
+    [[ $UPDATEURL != "$REPOURL#"* ]] || UPDATEURL="$INSTALLTMP/flake-src#${UPDATEURL#"$REPOURL#"}"
     REPOURL=$INSTALLTMP/flake-src
   elif [[ $__repourl != \$REPOURL ]]; then
     REPOURL=$__repourl
