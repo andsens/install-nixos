@@ -53,14 +53,12 @@ done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
   # shellcheck disable=SC2154
   ! $__abort_msg || timeout_msg 5 "Launching the installer in %ds. Press <ENTER> to abort..."
 
+  (umount $INSTALLTMP/flake-src 2>&1 || true) | pipe_debug
+  mkdir -p $INSTALLTMP/flake-src
   # shellcheck disable=SC2154
-  if ! $__no_mount; then
-    (umount $INSTALLTMP/flake-src 2>&1 || true) | pipe_debug
-    mkdir -p $INSTALLTMP/flake-src
-    if mount -t 9p -o trans=virtio -o version=9p2000.L pwd $INSTALLTMP/flake-src 2>&1 | pipe_debug; then
-      info "Mounted host system flake source, disable this with '--no-mount'"
-      REPOURL=$INSTALLTMP/flake-src
-    fi
+  if ! $__no_mount && mount -t 9p -o trans=virtio -o version=9p2000.L pwd $INSTALLTMP/flake-src 2>&1 | pipe_debug; then
+    info "Mounted host system flake source, disable this with '--no-mount'"
+    REPOURL=$INSTALLTMP/flake-src
   elif [[ $__repourl != \$REPOURL ]]; then
     REPOURL=$__repourl
   elif [[ -z $REPOURL ]]; then
