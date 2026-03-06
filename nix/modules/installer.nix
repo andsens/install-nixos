@@ -36,7 +36,7 @@ in
       defaultText = lib.literalExpression "\${repo.url}#nixosConfigurations.$HOSTNAME.config.sbfde.installer.package";
     };
     iso-image = lib.mkOption {
-      description = ''The installer ISO derivation'';
+      description = "The installer ISO derivation";
       type = lib.types.package;
       readOnly = true;
       default = config.system.build.isoImage;
