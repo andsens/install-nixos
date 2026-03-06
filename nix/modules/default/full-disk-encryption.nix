@@ -1,4 +1,3 @@
-{ ... }:
 {
   pkgs,
   lib,
@@ -6,11 +5,10 @@
   ...
 }:
 let
-  cfg = config.sbfde.full-disk-encryption;
+  cfg = config.sbfde;
 in
 {
-  options.sbfde.full-disk-encryption = {
-    enable = lib.mkEnableOption "full disk encryption profile";
+  options.sbfde = {
     recoveryKeyPath = lib.mkOption {
       description = "Location of the full disk encryption recovery key";
       type = lib.types.str;
@@ -24,26 +22,7 @@ in
     enrollEmptyKey = lib.mkEnableOption "enrollment of an empty encryption key (eases setup procedure, will be removed after enrollment of the SecureBoot LUKS key)";
     enrollFallbackPassword = lib.mkEnableOption "enrollment of a fallback password";
   };
-  config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = config.boot.lanzaboote.enable;
-        message = "Full disk encryption relies on SecureBoot with lanzaboote, please enable it by including the secureboot profile";
-      }
-    ];
-    fileSystems."/" = {
-      fsType = lib.mkDefault "ext4";
-      device = "/dev/mapper/${config.fileSystems."/".encrypted.label}";
-      encrypted = {
-        enable = true;
-        blkDev = lib.mkDefault "/dev/disk/by-label/nixos-encrypted";
-        label = lib.mkDefault "nixos";
-      };
-    };
-    boot.initrd.luks.devices.nixos.crypttabExtraOpts = [
-      "tpm2-measure-pcr=yes" # sooooper important, otherwise the key is accessible after booting
-      "tpm2-device=auto"
-    ];
+  config = lib.mkIf (cfg.enable && config.fileSystems."/".encrypted.enable) {
     systemd.services = {
       cryptenroll-tpm2 = lib.mkIf config.boot.lanzaboote.enable {
         restartIfChanged = true;

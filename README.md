@@ -27,19 +27,18 @@ Add `nixos-sbfde` to your `flake.nix`:
 
 ## Host configuration
 
-Import the SecureBoot and full disk encryption modules in your `configuration.nix`
-and enable them:
+Import the default module in your `configuration.nix`, enable it, and mark your
+config to be included in the installation prompt:
 
 ```nix
 { inputs, ... }:
 {
   imports = [
-    inputs.nixos-sbfde.nixosModules.secureboot
-    inputs.nixos-sbfde.nixosModules.full-disk-encryption
+    inputs.nixos-sbfde.nixosModules.default
  ];
   config = {
-    sbfde.secureboot.enable = true;
-    sbfde.full-disk-encryption.enable = true;
+    sbfde.enable = true;
+    sbfde.includeInSelection = true;
   };
 ```
 

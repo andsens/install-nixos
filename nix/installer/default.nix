@@ -78,7 +78,6 @@ stdenv.mkDerivation rec {
     }" \\
     RECORDS_SH=${records_sh} \\
     DOCOPT_LIB_SH=${docopt_sh} \\
-    REPART_D=${./repart.d} \\
     exec ${./installer} "\$@"
     EOF
     chmod +x "$out/bin/${name}"
