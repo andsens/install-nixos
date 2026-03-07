@@ -202,7 +202,7 @@ do declare -p "$p$varname";done;done;}
 
   if ! $enrollemptykey; then
     info "Unenrolling LUKS empty key"
-    systemd-cryptenroll --unlock-key-file="/mnt$recoverykeypath" --wipe-slot=empty
+    systemd-cryptenroll --unlock-key-file="/mnt$recoverykeypath" --wipe-slot=empty "$root_devpath"
   fi
 
   info "Installing NixOS"
