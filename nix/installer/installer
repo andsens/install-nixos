@@ -158,6 +158,7 @@ do declare -p "$p$varname";done;done;}
   recoverykeypath=$(get_config "$nixosconfig" sbfde.recoveryKeyPath | jq -re)
   enrollemptykey=$(get_config "$nixosconfig" sbfde.enrollEmptyKey | jq -r)
   repartdefinitions=$(nix build "$REPOURL#nixosConfigurations.\"$nixosconfig\".config.sbfde.repartDefinitions" --print-out-paths)
+  pkibundlepath=$(get_config "$nixosconfig" boot.lanzaboote.pkiBundle | jq -re)
 
   clear
 
@@ -223,6 +224,11 @@ do declare -p "$p$varname";done;done;}
   bootctl --esp-path /mnt/boot install
   mv /mnt/boot/EFI/BOOT/BOOTX64.EFI.BAK /mnt/boot/EFI/BOOT/BOOTX64.EFI
   mv /mnt/boot/EFI/systemd/systemd-bootx64.efi.bak /mnt/boot/EFI/systemd/systemd-bootx64.efi
+
+  info "Copying SecureBoot certificates to /boot, for manual installation"
+  mkdir -p /mnt/boot/loader/keys/manual
+  openssl x509 -in "/mnt$pkibundlepath/keys/db/db.pem" -outform der -out /mnt/boot/loader/keys/manual/db.cer
+  openssl x509 -in "/mnt$pkibundlepath/keys/KEK/KEK.pem" -outform der -out /mnt/boot/loader/keys/manual/KEK.cer
 
   info "Unmounting root & boot"
   umount /mnt/boot

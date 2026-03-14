@@ -12,6 +12,7 @@
   su,
   sbctl,
   openssh,
+  openssl,
   ncurses,
   nix,
   systemd,
@@ -64,6 +65,7 @@ stdenv.mkDerivation rec {
         su
         sbctl
         openssh
+        openssl
         ncurses
         nix
         systemd
