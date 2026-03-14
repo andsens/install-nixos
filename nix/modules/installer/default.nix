@@ -29,11 +29,17 @@ in
     package = lib.mkPackageOption self.packages.${pkgs.stdenv.hostPlatform.system} "installer" {
       extraDescription = "The installer package to use";
     };
+    isoNixOSConfigurationName = lib.mkOption {
+      description = "Name of the nixosConfiguration that configures the ISO installer, a shorthand for replacing $HOSTNAME \${config.networking.hostName} in update-url";
+      type = lib.types.nullOr lib.types.str;
+      default = config.networking.hostName;
+      defaultText = lib.literalExpression "\${config.networking.hostName}";
+    };
     update-url = lib.mkOption {
       description = "Repourl & path to the installer package so it can run the newest version, null to disable";
       type = lib.types.nullOr lib.types.str;
-      default = "${cfg.repo.url}#nixosConfigurations.${config.networking.hostName}.config.sbfde.installer.package";
-      defaultText = lib.literalExpression "\${repo.url}#nixosConfigurations.$HOSTNAME.config.sbfde.installer.package";
+      default = "${cfg.repo.url}#nixosConfigurations.${cfg.isoNixOSConfigurationName}.config.sbfde.installer.package";
+      defaultText = lib.literalExpression "\${repo.url}#nixosConfigurations.\${config.sbfde.installer.isoNixOSConfigurationName}.config.sbfde.installer.package";
     };
     unattended = {
       enable = lib.mkEnableOption "unattended installation";
