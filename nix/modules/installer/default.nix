@@ -16,7 +16,7 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
     };
-    repo.deploy-key = lib.mkOption {
+    repo.deployKey = lib.mkOption {
       description = "SSH private key that can access the installation repository";
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -30,12 +30,12 @@ in
       extraDescription = "The installer package to use";
     };
     isoNixOSConfigurationName = lib.mkOption {
-      description = "Name of the nixosConfiguration that configures the ISO installer, a shorthand for replacing $HOSTNAME \${config.networking.hostName} in update-url";
+      description = "Name of the nixosConfiguration that configures the ISO installer, a shorthand for replacing \${config.networking.hostName} in updateUrl";
       type = lib.types.nullOr lib.types.str;
       default = config.networking.hostName;
       defaultText = lib.literalExpression "\${config.networking.hostName}";
     };
-    update-url = lib.mkOption {
+    updateUrl = lib.mkOption {
       description = "Repourl & path to the installer package so it can run the newest version, null to disable";
       type = lib.types.nullOr lib.types.str;
       default = "${cfg.repo.url}#nixosConfigurations.${cfg.isoNixOSConfigurationName}.config.sbfde.installer.package";
@@ -57,7 +57,7 @@ in
         default = null;
       };
     };
-    iso-image = lib.mkOption {
+    isoImage = lib.mkOption {
       description = "The installer ISO derivation";
       type = lib.types.package;
       readOnly = true;
@@ -91,10 +91,10 @@ in
       );
       extraConfig = lib.join "\n" (
         (lib.optional (cfg.known_hosts != null) "StrictHostKeyChecking yes")
-        ++ (lib.optional (cfg.repo.deploy-key != null) "IdentityFile %d/.ssh/deploykey")
+        ++ (lib.optional (cfg.repo.deployKey != null) "IdentityFile %d/.ssh/deploykey")
       );
     };
-    systemd.tmpfiles.settings."50-deploykey" = lib.mkIf (cfg.repo.deploy-key != null) {
+    systemd.tmpfiles.settings."50-deploykey" = lib.mkIf (cfg.repo.deployKey != null) {
       "/root/.ssh".d = {
         user = "root";
         group = "root";
@@ -104,7 +104,7 @@ in
         user = "root";
         group = "root";
         mode = "0600";
-        argument = cfg.repo.deploy-key;
+        argument = cfg.repo.deployKey;
       };
       "/home/nixos/.ssh".d = {
         user = "nixos";
@@ -115,7 +115,7 @@ in
         user = "nixos";
         group = "users";
         mode = "0600";
-        argument = cfg.repo.deploy-key;
+        argument = cfg.repo.deployKey;
       };
     };
     security.sudo.extraConfig = ''
@@ -134,7 +134,7 @@ in
         in
         ''
           export REPOURL=${cfg.repo.url}${
-            lib.optionalString (cfg.update-url != null) "\nexport UPDATEURL=${cfg.update-url}"
+            lib.optionalString (cfg.updateUrl != null) "\nexport UPDATEURL=${cfg.updateUrl}"
           }
           if [[ $USER = nixos && ! -e .installer-launched ]]; then
             touch .installer-launched
