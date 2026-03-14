@@ -29,11 +29,24 @@
             installer = args: { imports = [ (importApply ./nix/modules/installer mkFlakeArgs) ]; };
           };
           nixosConfigurations = {
-            iso = nixpkgs.lib.nixosSystem {
+            iso_x86_64 = nixpkgs.lib.nixosSystem {
               specialArgs = { inherit inputs self; };
               modules = [
                 ./nix/configurations/iso.nix
-                { networking.hostName = "nixos"; }
+                {
+                  networking.hostName = "nixos";
+                  nixpkgs.hostPlatform = "x86_64-linux";
+                }
+              ];
+            };
+            iso_aarch64 = nixpkgs.lib.nixosSystem {
+              specialArgs = { inherit inputs self; };
+              modules = [
+                ./nix/configurations/iso.nix
+                {
+                  networking.hostName = "nixos";
+                  nixpkgs.hostPlatform = "aarch64-linux";
+                }
               ];
             };
           };

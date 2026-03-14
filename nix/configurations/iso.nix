@@ -7,8 +7,6 @@
   ];
   config = {
     system.stateVersion = "25.11";
-    time.timeZone = "Europe/Copenhagen";
-    nixpkgs.hostPlatform = "x86_64-linux";
     sbfde.installer = {
       enable = true;
       knownHosts = ''
