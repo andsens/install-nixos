@@ -16,12 +16,7 @@
       ...
     }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } (
-      {
-        flake-parts-lib,
-        config,
-        self,
-        ...
-      }@mkFlakeArgs:
+      { flake-parts-lib, self, ... }@mkFlakeArgs:
       let
         inherit (flake-parts-lib) importApply;
       in

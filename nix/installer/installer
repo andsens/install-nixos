@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091
-set -eo pipefail
+set -eo pipefail; shopt -s inherit_errexit
 
 source "${RECORDS_SH:?}/records.sh"
 # shellcheck disable=SC2034
@@ -54,13 +54,14 @@ do declare -p "$p$varname";done;done;}
 
   mkdir -p $INSTALLTMP
 
+  onexit() { fatal "Installation failed. You can restart the installer with \`sudo install-nixos\`."; }
   # shellcheck disable=SC2064
-  trap "error \"Installation aborted. You can restart the installer with 'sudo install-nixos'.\"" EXIT
+  trap onexit EXIT
 
   [[ $(id -u) = 0 ]] || fatal "Must run as root"
 
   # shellcheck disable=SC2154
-  ! $__abort_msg || timeout_msg 5 "Launching the installer in %ds. Press <ENTER> to abort..."
+  ! $__abort_msg || dialog --pause 'Launching the installer in' 8 30 5
 
   (umount $INSTALLTMP/flake-src 2>&1 || true) | pipe_debug
   mkdir -p $INSTALLTMP/flake-src
@@ -115,6 +116,7 @@ do declare -p "$p$varname";done;done;}
   # shellcheck disable=SC2154
   $__no_sb_check || sbctl status --json | jq -e .setup_mode >/dev/null 2>&1 || \
     fatal "Your system is not in Setup Mode! Reset secure boot keys so they can be enrolled. You can disable this check with '--no-sb-check'"
+
 
   local unattended=false installdev nixosconfig hashedpasswordfile hashedpassword enrollfallbackpassword
   # shellcheck disable=SC2154
@@ -207,7 +209,9 @@ do declare -p "$p$varname";done;done;}
   fi
 
   info "Installing NixOS"
-  nixos-install --verbose --no-root-password --root /mnt --flake "$REPOURL#$nixosconfig"
+  trap "error \"Installation aborted. You can restart the installer with 'sudo install-nixos'.\"" EXIT
+  nixos-install --verbose --no-root-password --root /mnt --flake "$REPOURL#$nixosconfig" 2>&1 | tee $INSTALLTMP/nixos-install.log || \
+    fatal "\`nixos-install failed. Check the log at %s\`" "$INSTALLTMP/nixos-install.log"
 
   if [[ -n $hashedpasswordfile ]]; then
     info "Copying hashed user password to the system"
@@ -240,10 +244,13 @@ do declare -p "$p$varname";done;done;}
   trap "" EXIT
   # shellcheck disable=SC2154
   if $__auto_reboot; then
-    timeout_msg 5 "Rebooting in %ds. Press <ENTER> to abort..." || fatal "Reboot aborted"
+    dialog --pause 'Rebooting in' 8 25 5 || fatal "Reboot aborted"
     reboot
   else
-    info "Installation completed! Run \`reboot' to boot into your new system."
+    $__no_sb_check
+    ! dialog --yesno $'Installation completed!\nWould you like to reboot now?' 6 35 || \
+      reboot
+    info "Run \`reboot' to boot into your new system."
   fi
 }
 
@@ -303,21 +310,7 @@ get_secret() {
 get_config() {
   local nixosconfig=$1 configpath=$2
   nix eval --json "$REPOURL#nixosConfigurations.\"$nixosconfig\".config.$configpath" || \
-    fatal "Unable to retrieve configpath %s for host %s" "$configpath" "$nixosconfig"
-}
-
-timeout_msg() {
-  local timeout=$1 msg_tpl=$2 rendered_msg ret
-  until (( timeout == 0 )); do
-    # shellcheck disable=SC2059
-    rendered_msg=$(printf "\r$msg_tpl" "$timeout")
-    ret=0
-    read -r -p "$rendered_msg" -t 1 || ret=$?
-    [[ $ret = 142 ]] || return 1
-    : $((timeout--))
-  done
-  printf "\n"
-  return 0
+    fatal "Unable to retrieve configpath %s for host %s. Verify your configuration with \`nix flake check\`" "$configpath" "$nixosconfig"
 }
 
 main "$@"

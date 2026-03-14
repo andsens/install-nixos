@@ -63,6 +63,7 @@ in
       cfg.package
       pkgs.sbctl
       pkgs.jq
+      pkgs.iproute2
     ];
     nix.settings.experimental-features = [
       "nix-command"
