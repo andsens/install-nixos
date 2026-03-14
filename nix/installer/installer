@@ -6,7 +6,18 @@ source "${RECORDS_SH:?}/records.sh"
 # shellcheck disable=SC2034
 LOGPROGRAM=install-nixos
 INSTALLTMP=/tmp/install-nixos
-UNATTENDEDPATH=/iso/unattended.json
+CONFIGPATH=/iso/config.json
+UNATTENDED=false
+if [[ -e $CONFIGPATH ]]; then
+  REPOURL=$(jq -r '.repoUrl // empty' $CONFIGPATH)
+  UPDATEURL=$(jq -r '.updateUrl // empty' $CONFIGPATH)
+  UNATTENDED=$(jq -r '.unattended.enable' $CONFIGPATH)
+fi
+
+if [[ -e /iso/deploy_key ]]; then
+  cp /iso/deploy_key /root/.ssh/deploykey
+  chmod 0600 /root/.ssh/deploykey
+fi
 
 main() {
   DOC="install-nixos - Install NixOS on the current machine
@@ -14,13 +25,13 @@ Usage:
   install-nixos [options]
 
 Options:
-  --abort-msg    Show an abort message for 5 secs before launching
-  --auto-reboot  Automatically reboot the machine after a successful install
-  --no-update    Don't \`nix run\` \$UPDATEURL
-  --no-sb-check  Don't check if the system is in Setup Mode
-  --no-mount     Don't mount the host system flake source if available
-  --unattended   Enable unattended mode, if /iso/unattended.json exists
-  --repourl=URL    Set the installation repository URL [default: \$REPOURL]
+  --abort-msg      Show an abort message for 5 secs before launching
+  --auto-reboot    Automatically reboot the machine after a successful install
+  --no-update      Don't auto-update
+  --no-sb-check    Don't check if the system is in Setup Mode
+  --no-mount       Don't mount the host system flake source if available
+  --no-unattended  Disable unattended mode
+  --repourl=URL    Set/override the installation repository URL
   --install-dev <DEVPATH>  Devicepath to install to
   --nixosconfig <CONFIG>   Name of nixosConfiguration to install
 "
@@ -28,27 +39,27 @@ Options:
 # shellcheck disable=2016,2086,2329,1090,1091,2034
 docopt() { local v='2.0.3'; source "${DOCOPT_LIB_SH:?}/docopt-lib.sh" "$v" || {
 ret=$?;printf -- "exit %d\n" "$ret";exit "$ret";};set -e
-trimmed_doc=${DOC:0:678};usage=${DOC:53:32};digest=dd8d3;options=(' --abort-ms'\
+trimmed_doc=${DOC:0:639};usage=${DOC:53:32};digest=60b77;options=(' --abort-ms'\
 'g 0' ' --auto-reboot 0' ' --no-update 0' ' --no-sb-check 0' ' --no-mount 0' \
-' --unattended 0' ' --repourl 1' ' --install-dev 1' ' --nixosconfig 1')
+' --no-unattended 0' ' --repourl 1' ' --install-dev 1' ' --nixosconfig 1')
 node_0(){ switch __abort_msg 0;};node_1(){ switch __auto_reboot 1;};node_2(){
 switch __no_update 2;};node_3(){ switch __no_sb_check 3;};node_4(){ switch \
-__no_mount 4;};node_5(){ switch __unattended 5;};node_6(){ value __repourl 6;}
-node_7(){ value __install_dev 7;};node_8(){ value __nixosconfig 8;};node_9(){
+__no_mount 4;};node_5(){ switch __no_unattended 5;};node_6(){ value __repourl 6
+};node_7(){ value __install_dev 7;};node_8(){ value __nixosconfig 8;};node_9(){
 optional 0 1 2 3 4 5 6 7 8;};cat <<<' docopt_exit() { [[ -n $1 ]] && printf \
 "%s\n" "$1" >&2;printf "%s\n" "${DOC:53:32}" >&2;exit 1;}';local \
 varnames=(__abort_msg __auto_reboot __no_update __no_sb_check __no_mount \
-__unattended __repourl __install_dev __nixosconfig) varname;for varname in \
+__no_unattended __repourl __install_dev __nixosconfig) varname;for varname in \
 "${varnames[@]}"; do unset "var_$varname";done;parse 9 "$@";local \
 p=${DOCOPT_PREFIX:-''};for varname in "${varnames[@]}"; do unset "$p$varname"
 done;eval $p'__abort_msg=${var___abort_msg:-false};'$p'__auto_reboot=${var___a'\
 'uto_reboot:-false};'$p'__no_update=${var___no_update:-false};'$p'__no_sb_chec'\
-'k=${var___no_sb_check:-false};'$p'__no_mount=${var___no_mount:-false};'$p'__u'\
-'nattended=${var___unattended:-false};'$p'__repourl=${var___repourl:-'\
-"'"'$REPOURL'"'"'};'$p'__install_dev=${var___install_dev:-};'$p'__nixosconfig='\
-'${var___nixosconfig:-};';local docopt_i=1;[[ $BASH_VERSION =~ ^4.3 ]] && \
-docopt_i=2;for ((;docopt_i>0;docopt_i--)); do for varname in "${varnames[@]}"; \
-do declare -p "$p$varname";done;done;}
+'k=${var___no_sb_check:-false};'$p'__no_mount=${var___no_mount:-false};'$p'__n'\
+'o_unattended=${var___no_unattended:-false};'$p'__repourl=${var___repourl:-};'\
+$p'__install_dev=${var___install_dev:-};'$p'__nixosconfig=${var___nixosconfig:'\
+'-};';local docopt_i=1;[[ $BASH_VERSION =~ ^4.3 ]] && docopt_i=2;for \
+((;docopt_i>0;docopt_i--)); do for varname in "${varnames[@]}"; do declare -p \
+"$p$varname";done;done;}
 # docopt parser above, complete command for generating this parser is `docopt.sh --library='"${DOCOPT_LIB_SH:?}/docopt-lib.sh"' installer`
   eval "$(docopt "$@")"
 
@@ -99,7 +110,7 @@ do declare -p "$p$varname";done;done;}
       info "If this fails, you can restart the installer without updating by running 'sudo install-nixos'"
       exec nix run --tarball-ttl 0 "$UPDATEURL" -- "${rerun_args[@]}"
     else
-      info "Skipping self-update, \$UPDATEURL is not set"
+      info "Skipping self-update, config.json has no \`updateUrl\` defined"
     fi
   fi
 
@@ -115,32 +126,34 @@ do declare -p "$p$varname";done;done;}
   # Make sure we can enroll the secure boot keys
   # shellcheck disable=SC2154
   $__no_sb_check || sbctl status --json | jq -e .setup_mode >/dev/null 2>&1 || \
-    fatal "Your system is not in Setup Mode! Reset secure boot keys so they can be enrolled. You can disable this check with '--no-sb-check'"
+    fatal "Your system is not in Setup Mode! Reset secure boot keys so they can be enrolled.
+You can disable this check with '--no-sb-check' and still enroll the certificates manually."
 
 
-  local unattended=false installdev nixosconfig hashedpasswordfile hashedpassword enrollfallbackpassword
+  local installdev nixosconfig hashedpasswordfile hashedpassword enrollfallbackpassword
   # shellcheck disable=SC2154
-  [[ ! -e $UNATTENDEDPATH ]] || unattended=$__unattended
-  ! $unattended || info "Commencing unattended installation"
+  ! $__no_unattended || UNATTENDED=false
+  ! $UNATTENDED || info "Commencing unattended installation"
   if [[ -n $__install_dev ]]; then
     installdev=$__install_dev
-  elif $unattended; then
-    installdev=$(jq -re .installDev "$UNATTENDEDPATH") || \
-      fatal "Key \"installDev\" missing in %s, unable to continue with unattended install." "$UNATTENDEDPATH"
+  elif $UNATTENDED; then
+    installdev=$(jq -re .unattended.installDev "$CONFIGPATH") || \
+      fatal "Key \"unattended.installDev\" %s is not set. Unable to continue with unattended install." "$CONFIGPATH"
   else
     installdev=$(get_installdev)
   fi
   if [[ -n $__nixosconfig ]]; then
     nixosconfig=$__nixosconfig
-  elif $unattended; then
-    nixosconfig=$(jq -re .nixOSConfig "$UNATTENDEDPATH") || \
-      fatal "Key \"nixOSConfig\" missing in %s, unable to continue with unattended install." "$UNATTENDEDPATH"
+  elif $UNATTENDED; then
+    nixosconfig=$(jq -re .unattended.nixOSConfig "$CONFIGPATH") || \
+      fatal "Key \"unattended.nixOSConfig\" %s is not set. Unable to continue with unattended install." "$CONFIGPATH"
   else
     nixosconfig=$(get_nixosconfig)
   fi
   if hashedpasswordfile=$(get_config "$nixosconfig" sbfde.hashedPasswordFile | jq -re); then
-    if $unattended; then
-      hashedpassword=$(jq -r '.hashedPassword // empty' "$UNATTENDEDPATH")
+    if $UNATTENDED; then
+      hashedpassword=$(jq -r '.unattended.hashedPassword // empty' "$CONFIGPATH")
+      [[ -n $hashedpasswordfile ]] || hashedpasswordfile=
     else
       get_secret $INSTALLTMP/user_password "Enter your user password"
       hashedpassword=$(cat $INSTALLTMP/user_password | mkpasswd --stdin)
@@ -148,7 +161,7 @@ do declare -p "$p$varname";done;done;}
   fi
   enrollfallbackpassword=$(get_config "$nixosconfig" sbfde.enrollFallbackPassword | jq -r)
   if $enrollfallbackpassword; then
-    ! $unattended || fatal "LUKS fallback password enabled. This is unsupported in unattended mode. Disable with sbfde.enrollFallbackPassword=false"
+    ! $UNATTENDED || fatal "LUKS fallback password enabled. This is unsupported in unattended mode. Disable with sbfde.enrollFallbackPassword=false"
     # Prompt, then prepare enrollment of a fallback FDE password
     (umask 0066; touch $INSTALLTMP/fallback.key)
     get_secret $INSTALLTMP/fallback.key "Enter a disk encryption fallback password"

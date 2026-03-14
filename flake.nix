@@ -13,6 +13,7 @@
     {
       systems,
       flake-parts,
+      nixpkgs,
       ...
     }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } (
@@ -22,9 +23,20 @@
       in
       {
         systems = import systems;
-        flake.nixosModules = {
-          default = args: { imports = [ (importApply ./nix/modules/default mkFlakeArgs) ]; };
-          installer = args: { imports = [ (importApply ./nix/modules/installer mkFlakeArgs) ]; };
+        flake = {
+          nixosModules = {
+            default = args: { imports = [ (importApply ./nix/modules/default mkFlakeArgs) ]; };
+            installer = args: { imports = [ (importApply ./nix/modules/installer mkFlakeArgs) ]; };
+          };
+          nixosConfigurations = {
+            iso = nixpkgs.lib.nixosSystem {
+              specialArgs = { inherit inputs self; };
+              modules = [
+                ./nix/configurations/iso.nix
+                { networking.hostName = "nixos"; }
+              ];
+            };
+          };
         };
         perSystem =
           { pkgs, ... }:
