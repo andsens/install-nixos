@@ -12,6 +12,7 @@ in
     boot = {
       initrd = {
         systemd = {
+          enable = lib.mkDefault true;
           tpm2.enable = lib.mkDefault true;
           initrdBin = lib.optional (lib.hasPrefix "ext" config.fileSystems."/".fsType) pkgs.e2fsprogs;
         };
